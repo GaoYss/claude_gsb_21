@@ -96,6 +96,20 @@ WEATHER = EnumGroup("weather", [
     ("windy", "大风"),
 ])
 
+# ---------------------------------------------------------------- 气象日志
+WEATHER_SOURCE = EnumGroup("weather_source", [
+    ("manual", "人工记录"),
+    ("imported", "气象台导入"),
+])
+
+# 养护记录天气与当日气象日志的核对结论
+WEATHER_MATCH = EnumGroup("weather_match", [
+    ("pending", "未核对"),
+    ("consistent", "与气象一致"),
+    ("mismatch", "天气不符"),
+    ("unavailable", "无气象记录"),
+])
+
 # ---------------------------------------------------------------- 绿植更换
 PLANT_CATEGORY = EnumGroup("plant_category", [
     ("tree", "乔木"),
@@ -140,6 +154,8 @@ ENUM_GROUPS = {
     "task_status": TASK_STATUS,
     "quality_result": QUALITY_RESULT,
     "weather": WEATHER,
+    "weather_source": WEATHER_SOURCE,
+    "weather_match": WEATHER_MATCH,
     "plant_category": PLANT_CATEGORY,
     "replacement_reason": REPLACEMENT_REASON,
     "old_plant_status": OLD_PLANT_STATUS,

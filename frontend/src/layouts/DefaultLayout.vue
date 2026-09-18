@@ -66,6 +66,7 @@ const menuItems = [
   { path: '/green-spaces', title: '绿地台账', icon: 'MapLocation' },
   { path: '/tasks', title: '养护任务', icon: 'Tickets' },
   { path: '/records', title: '养护记录', icon: 'Notebook' },
+  { path: '/weather', title: '气象日志', icon: 'Cloudy' },
   { path: '/replacements', title: '绿植更换', icon: 'Cherry' },
 ]
 

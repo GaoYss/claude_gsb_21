@@ -125,6 +125,30 @@ def make_record(make_space):
 
 
 @pytest.fixture()
+def make_diary(app):
+    from app.models import WeatherDiary
+
+    def _make(district="西湖区", day=date(2026, 6, 10), weather="rain",
+              rainfall_mm=None, source="imported", **overrides):
+        if rainfall_mm is None and weather in ("rain", "snow"):
+            rainfall_mm = 10.0
+        payload = {
+            "district": district,
+            "diary_date": day,
+            "weather": weather,
+            "rainfall_mm": rainfall_mm,
+            "source": source,
+        }
+        payload.update(overrides)
+        diary = WeatherDiary(**payload)
+        db.session.add(diary)
+        db.session.commit()
+        return diary
+
+    return _make
+
+
+@pytest.fixture()
 def make_replacement(make_space):
     from app.services import PlantReplacementService
 

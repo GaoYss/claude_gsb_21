@@ -1,6 +1,6 @@
 """养护记录模型。"""
 
-from ..constants import QUALITY_RESULT, WEATHER
+from ..constants import QUALITY_RESULT, WEATHER, WEATHER_MATCH
 from ..extensions import db
 from ..utils.dates import format_date, format_datetime
 from ..utils.numbers import to_float
@@ -28,6 +28,9 @@ class MaintenanceRecord(TimestampMixin, db.Model):
     worker = db.Column(db.String(64))
     work_hours = db.Column(quantity_column())
     weather = db.Column(db.String(16))
+    weather_match = db.Column(db.String(16), nullable=False, default="pending", index=True)
+    weather_conflict_note = db.Column(db.Text)
+    weather_checked_at = db.Column(db.DateTime)
     materials = db.Column(db.Text)
     quality_result = db.Column(db.String(16), nullable=False, default="pending", index=True)
     issue_found = db.Column(db.Text)
@@ -60,12 +63,17 @@ class MaintenanceRecord(TimestampMixin, db.Model):
             "work_hours": to_float(self.work_hours),
             "weather": self.weather,
             "weather_label": WEATHER.label(self.weather) if self.weather else None,
+            "weather_match": self.weather_match,
+            "weather_match_label": WEATHER_MATCH.label(self.weather_match),
+            "weather_conflict": self.weather_conflict_note is not None,
+            "weather_conflict_note": self.weather_conflict_note,
             "quality_result": self.quality_result,
             "quality_result_label": QUALITY_RESULT.label(self.quality_result),
             "created_at": format_datetime(self.created_at),
             "updated_at": format_datetime(self.updated_at),
         }
         if detail:
+            data["weather_checked_at"] = format_datetime(self.weather_checked_at)
             data["materials"] = self.materials
             data["issue_found"] = self.issue_found
             data["remark"] = self.remark

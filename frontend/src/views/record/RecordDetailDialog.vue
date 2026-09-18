@@ -14,7 +14,12 @@
           <el-tag v-else size="small" type="info" effect="plain">日常养护（未关联任务）</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="养护日期">{{ formatDate(detail.record_date) }}</el-descriptions-item>
-        <el-descriptions-item label="天气">{{ detail.weather_label || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="天气">
+          {{ detail.weather_label || '-' }}
+          <el-tag v-if="detail.weather_match" :type="matchTagType" size="small" effect="plain" class="match-tag">
+            {{ detail.weather_match_label }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="作业人员">{{ detail.worker || '-' }}</el-descriptions-item>
         <el-descriptions-item label="工时">{{ formatHours(detail.work_hours) }}</el-descriptions-item>
         <el-descriptions-item label="质量评定">
@@ -22,6 +27,9 @@
         </el-descriptions-item>
         <el-descriptions-item label="登记时间">{{ formatDateTime(detail.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="作业内容" :span="2">{{ detail.work_content || '-' }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.weather_conflict_note" label="气象核对说明" :span="2">
+          <span class="conflict-note">{{ detail.weather_conflict_note }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="使用材料" :span="2">{{ detail.materials || '-' }}</el-descriptions-item>
         <el-descriptions-item label="发现问题" :span="2">{{ detail.issue_found || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
@@ -54,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { maintenanceRecordApi } from '@/api'
 import EnumTag from '@/components/common/EnumTag.vue'
@@ -63,6 +71,14 @@ import { formatCurrency, formatDate, formatDateTime, formatHours, formatNumber }
 const visible = ref(false)
 const loading = ref(false)
 const detail = ref({})
+
+const MATCH_TAG_TYPES = {
+  consistent: 'success',
+  mismatch: 'warning',
+  unavailable: 'info',
+  pending: 'info',
+}
+const matchTagType = computed(() => MATCH_TAG_TYPES[detail.value.weather_match] || 'info')
 
 async function open(id) {
   visible.value = true
@@ -91,5 +107,13 @@ defineExpose({ open })
 
 .panel-title {
   font-weight: 600;
+}
+
+.match-tag {
+  margin-left: 6px;
+}
+
+.conflict-note {
+  color: var(--el-color-warning);
 }
 </style>

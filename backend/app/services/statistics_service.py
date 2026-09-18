@@ -80,6 +80,13 @@ class StatisticsService:
             func.coalesce(func.sum(MaintenanceRecord.work_hours), 0),
         ).filter(MaintenanceRecord.record_date >= month_start).one()
 
+        weather_conflicts = (
+            db.session.query(func.count(MaintenanceRecord.id))
+            .filter(MaintenanceRecord.weather_conflict_note.isnot(None))
+            .scalar()
+            or 0
+        )
+
         replacement_total, quantity_total, amount_total = db.session.query(
             func.count(PlantReplacement.id),
             func.coalesce(func.sum(PlantReplacement.quantity), 0),
@@ -117,6 +124,7 @@ class StatisticsService:
                 "total_work_hours": to_float(hours_total) or 0,
                 "month_count": month_records or 0,
                 "month_work_hours": to_float(month_hours) or 0,
+                "weather_conflict_count": weather_conflicts,
             },
             "replacement": {
                 "total": replacement_total or 0,
@@ -367,6 +375,19 @@ class StatisticsService:
         return [task.to_dict() for task in tasks]
 
     @staticmethod
+    def weather_conflict_records(limit=10):
+        """天气与实际气象不符、或雨后短期内仍登记浇灌的养护记录。"""
+
+        records = (
+            db.session.query(MaintenanceRecord)
+            .filter(MaintenanceRecord.weather_conflict_note.isnot(None))
+            .order_by(MaintenanceRecord.record_date.desc(), MaintenanceRecord.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [record.to_dict(detail=True) for record in records]
+
+    @staticmethod
     def recent_activity(limit=6):
         records = (
             db.session.query(MaintenanceRecord)
@@ -397,5 +418,6 @@ class StatisticsService:
             "ranking": StatisticsService.green_space_ranking(),
             "overdue_tasks": StatisticsService.overdue_tasks(),
             "upcoming_tasks": StatisticsService.upcoming_tasks(),
+            "weather_conflict_records": StatisticsService.weather_conflict_records(),
             "recent_activity": StatisticsService.recent_activity(),
         }

@@ -14,7 +14,8 @@
 | 养护总览 | `/dashboard` | 绿地与养护总量指标、近半年记录与工时趋势、绿地类型/任务类型/更换原因分布、逾期任务提醒、养护工作量排名 |
 | 绿地台账 | `/green-spaces` | 绿地建档（编号自动生成）、按行政区/类型/等级/状态/关键字检索、档案详情（概览 + 近期任务/记录/更换 + 更换原因汇总）、删除保护 |
 | 养护任务 | `/tasks` | 任务登记（编号按日生成）、按状态/类型/优先级/绿地/计划日期区间/逾期筛选、状态流转（待执行→进行中→已完成/已取消）、任务详情与执行进度 |
-| 养护记录 | `/records` | 记录录入（可关联任务，也可登记日常巡查）、工时/天气/材料/质量评定、质量分布与工时汇总、记录详情 |
+| 养护记录 | `/records` | 记录录入（可关联任务，也可登记日常巡查）、工时/天气/材料/质量评定、天气与当日气象实时核对、浇灌遇降雨提示、冲突标注与筛选、质量分布与工时汇总、记录详情 |
+| 气象日志 | `/weather` | 按行政区登记每日实际天气（人工记录/气象台批量导入，含降雨量）、气象日志增删改与筛选；气象日志变动后自动回查相关养护记录 |
 | 绿植更换 | `/replacements` | 更换登记（植株、类别、规格、数量、原因、原植株状况、供苗单位、单价与金额）、按类别/原因统计与占比、按绿地/日期区间筛选 |
 
 ## 二、目录结构
@@ -31,14 +32,15 @@
 │   │   ├── api/                 # 接口层：每个业务模块一个 Blueprint
 │   │   │   ├── green_spaces.py
 │   │   │   ├── maintenance_tasks.py
-│   │   │   ├── maintenance_records.py
+│   │   │   ├── maintenance_records.py  # 含 /maintenance-records/weather-check 天气核对预览
 │   │   │   ├── plant_replacements.py
+│   │   │   ├── weather_diaries.py
 │   │   │   ├── statistics.py
 │   │   │   └── meta.py
 │   │   ├── schemas/             # 校验层：写库字段校验 + 查询条件解析
 │   │   │   ├── common.py        # 链式字段校验器
 │   │   │   ├── filters.py       # 列表过滤条件
-│   │   │   └── green_space.py / maintenance_task.py / maintenance_record.py / plant_replacement.py
+│   │   │   └── green_space.py / maintenance_task.py / maintenance_record.py / plant_replacement.py / weather_diary.py
 │   │   ├── services/            # 业务层：事务、编号生成、跨模块规则
 │   │   │   ├── base_service.py  # 通用增删改与编号冲突重试
 │   │   │   ├── code_generator.py
@@ -46,8 +48,9 @@
 │   │   │   ├── maintenance_task_service.py
 │   │   │   ├── maintenance_record_service.py
 │   │   │   ├── plant_replacement_service.py
+│   │   │   ├── weather_diary_service.py  # 实际气象维护与天气核对/浇灌提示
 │   │   │   └── statistics_service.py
-│   │   ├── models/              # 模型层：SQLAlchemy 模型与序列化
+│   │   ├── models/              # 模型层：SQLAlchemy 模型与序列化（含 weather_diary.py）
 │   │   └── utils/               # 响应封装、分页、日期、排序等
 │   ├── tests/                   # pytest 测试（接口 + 业务规则 + 端到端流程）
 │   ├── docker/entrypoint.sh     # 等库就绪 → 建表 → 可选写入演示数据
@@ -153,9 +156,14 @@ cd frontend && npm run build && npm run preview
 | GET/POST | `/maintenance-tasks` | 任务列表 / 登记任务（`status`/`task_type`/`priority`/`green_space_id`/`date_from`/`date_to`/`overdue`） |
 | GET/PUT/DELETE | `/maintenance-tasks/{id}` | 任务详情（含执行进度与记录） / 更新 / 删除（有记录时需 `force`，记录会保留但解除关联） |
 | PATCH | `/maintenance-tasks/{id}/status` | 任务状态流转 |
-| GET/POST | `/maintenance-records` | 记录列表（`task_id`/`green_space_id`/`quality_result`/`weather`/`unlinked`/日期区间，返回汇总） / 录入记录 |
-| GET/PUT/DELETE | `/maintenance-records/{id}` | 记录详情（含关联更换记录） / 更新 / 删除 |
-| GET | `/maintenance-records/summary` | 记录汇总（条数、工时、质量分布） |
+| GET/POST | `/maintenance-records` | 记录列表（`task_id`/`green_space_id`/`quality_result`/`weather`/`weather_match`/`weather_conflict`/`unlinked`/日期区间，返回汇总） / 录入记录（保存时自动完成天气核对） |
+| GET/PUT/DELETE | `/maintenance-records/{id}` | 记录详情（含关联更换记录、气象核对说明） / 更新 / 删除 |
+| GET | `/maintenance-records/summary` | 记录汇总（条数、工时、质量分布、气象冲突条数） |
+| GET | `/maintenance-records/weather-check` | 天气核对预览（入参 `green_space_id`/`task_id`/`record_date`/`weather`/`work_content`，返回当日实际天气、建议天气、核对结论与浇灌降雨提示） |
+| GET/POST | `/weather-diaries` | 气象日志列表（`district`/`weather`/`source`/`rainy`/日期区间） / 登记气象日志（同行政区同日期唯一） |
+| GET/PUT/DELETE | `/weather-diaries/{id}` | 气象日志详情 / 更新（回查相关记录） / 删除（解除相关提示） |
+| GET | `/weather-diaries/districts` | 已登记气象日志的行政区及条数 |
+| POST | `/weather-diaries/import` | 批量导入气象日志（按行政区+日期 upsert，逐条返回校验失败明细，导入后自动回查） |
 | GET/POST | `/plant-replacements` | 更换记录列表（`green_space_id`/`plant_category`/`reason`/日期区间，返回汇总） / 登记更换 |
 | GET/PUT/DELETE | `/plant-replacements/{id}` | 详情 / 更新 / 删除 |
 | GET | `/plant-replacements/summary` | 更换汇总（按植物类别、更换原因） |
@@ -175,6 +183,12 @@ cd frontend && npm run build && npm run preview
 5. **金额核算**：更换金额 = 数量 × 单价，由后端统一计算；未填单价时金额留空，前端提示补录。
 6. **删除保护**：删除绿地时若已存在任务/记录/更换数据会返回 409 并给出数量明细，需 `force=true` 才级联删除；删除任务时养护记录默认保留（解除关联），避免养护履历丢失。
 7. **字典单一来源**：所有枚举在 `backend/app/constants.py` 定义，前端通过 `/meta/enums` 获取并缓存，前后端不重复维护。
+8. **天气与实际气象一致**（`weather_diary_service`）：
+   - 气象日志按「行政区 + 日期」唯一维护（人工登记或气象台批量导入），记录保存时按绿地所属行政区与养护日期自动核对；
+   - 登记天气为空但当日有气象日志时，自动按实际气象回填；与实际气象一致标注「与气象一致」，无气象日志标注「无气象记录」；
+   - 登记天气与实际气象不符时**不阻断保存**，表单实时提示当日实际天气并提供「按实际气象填报」一键采用；未采纳的记录在档案中保留并写入核对说明（`weather_conflict_note`），列表/详情/绿地档案均有醒目标注，可按核对结论或「仅看气象冲突」筛选；
+   - **浇灌类作业**（任务类型为「浇灌排涝」或作业内容含浇灌/浇水等关键词；排涝排水除外）在**降雨当天或雨后 2 天内**登记时给出降雨提示，作业人员仍可保留登记，提示与处理结果（仍保留登记）同样写入核对说明；
+   - 气象日志新增、修改、删除或批量导入后，会按降雨影响窗口自动回查相关养护记录并刷新核对结论（补录雨后，已登记记录也会补上提示；删除日志则解除提示）。
 
 ## 七、数据模型
 
@@ -182,7 +196,8 @@ cd frontend && npm run build && npm run preview
 | --- | --- | --- |
 | `green_space` | 绿地台账 | `code`(唯一)、`name`、`district`、`green_type`、`maintenance_grade`、`area_sqm`、`status`、`manager`、`established_date` |
 | `maintenance_task` | 养护任务 | `task_no`(唯一)、`green_space_id`、`task_type`、`plan_date`、`priority`、`executor`、`status`、`completed_at` |
-| `maintenance_record` | 养护记录 | `record_no`(唯一)、`task_id`(可空)、`green_space_id`、`record_date`、`work_content`、`worker`、`work_hours`、`weather`、`quality_result` |
+| `maintenance_record` | 养护记录 | `record_no`(唯一)、`task_id`(可空)、`green_space_id`、`record_date`、`work_content`、`worker`、`work_hours`、`weather`、`quality_result`、`weather_match`(核对结论)、`weather_conflict_note`(冲突标注说明)、`weather_checked_at` |
+| `weather_diary` | 气象日志 | `district`+`diary_date`(联合唯一)、`weather`、`rainfall_mm`、`source`(人工/导入)、`remark` |
 | `plant_replacement` | 绿植更换记录 | `replacement_no`(唯一)、`green_space_id`、`maintenance_record_id`(可空)、`plant_name`、`plant_category`、`quantity`、`unit`、`reason`、`unit_price`、`amount` |
 
 绿地删除时任务/记录/更换级联清理；任务与养护记录之间、养护记录与更换记录之间为可空外键（`SET NULL`），保证养护履历可独立留存。
@@ -191,10 +206,10 @@ cd frontend && npm run build && npm run preview
 
 ```bash
 cd backend
-python -m pytest              # 52 个用例：接口、校验、跨模块规则、端到端流程
+python -m pytest              # 75 个用例：接口、校验、跨模块规则、端到端流程
 ```
 
-覆盖重点：绿地编号生成与唯一性、枚举与字段校验、列表过滤/排序/分页、任务状态自动流转与手动流转限制、记录删除后的状态回退、更换金额核算、删除保护与强制删除、统计聚合口径一致性、演示数据自洽性。
+覆盖重点：绿地编号生成与唯一性、枚举与字段校验、列表过滤/排序/分页、任务状态自动流转与手动流转限制、记录删除后的状态回退、更换金额核算、删除保护与强制删除、统计聚合口径一致性、演示数据自洽性、气象日志维护与批量导入、天气核对（一致/不符/无气象记录/自动回填）、降雨当天及雨后短期内浇灌提示、冲突未采纳时的档案标注、气象日志变动后的自动回查。
 
 ## 九、常见问题
 

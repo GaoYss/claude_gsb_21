@@ -82,13 +82,30 @@ def record_filters(args):
         if value:
             filters[key] = value
     filters["unlinked"] = _flag(args, "unlinked")
-    for key, group_key in (("quality_result", "quality_result"), ("weather", "weather")):
+    for key, group_key in (("quality_result", "quality_result"), ("weather", "weather"),
+                           ("weather_match", "weather_match")):
         value = _enum(args, key, group_key)
         if value:
             filters[key] = value
+    filters["weather_conflict"] = _flag(args, "weather_conflict")
     keyword = _text(args, "keyword")
     if keyword:
         filters["keyword"] = keyword
+    filters["date_from"] = _date(args, "date_from")
+    filters["date_to"] = _date(args, "date_to")
+    return filters
+
+
+def weather_diary_filters(args):
+    filters = {}
+    district = _text(args, "district")
+    if district:
+        filters["district"] = district
+    for key, group_key in (("weather", "weather"), ("source", "weather_source")):
+        value = _enum(args, key, group_key)
+        if value:
+            filters[key] = value
+    filters["rainy"] = _flag(args, "rainy")
     filters["date_from"] = _date(args, "date_from")
     filters["date_to"] = _date(args, "date_to")
     return filters

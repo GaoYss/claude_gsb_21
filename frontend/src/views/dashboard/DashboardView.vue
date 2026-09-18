@@ -37,6 +37,14 @@
         icon="Notebook"
       />
       <StatCard
+        label="气象核对冲突"
+        :value="formatNumber(overview.record.weather_conflict_count)"
+        unit="条"
+        :hint="overview.record.weather_conflict_count ? '天气不符或雨后短期内登记浇灌，待档案核查' : '登记天气与实际气象保持一致'"
+        :tone="overview.record.weather_conflict_count ? 'warning' : 'default'"
+        icon="WarningFilled"
+      />
+      <StatCard
         label="本月绿植更换"
         :value="formatNumber(overview.replacement.month_quantity)"
         unit="株/㎡"
@@ -57,6 +65,32 @@
       <ChartPanel title="绿地类型分布" hint="按绿地处数" :option="typeChart" />
       <ChartPanel title="养护任务类型分布" hint="按任务条数" :option="taskTypeChart" />
       <ChartPanel title="绿植更换原因分布" hint="按更换数量" :option="reasonChart" />
+    </div>
+
+    <div v-if="dashboard.weather_conflict_records?.length" class="panel conflict-panel">
+      <div class="table-toolbar">
+        <span class="panel-title">气象核对冲突记录</span>
+        <el-link type="primary" :underline="false" @click="router.push('/records')">
+          进入养护记录处理
+        </el-link>
+      </div>
+      <el-table :data="dashboard.weather_conflict_records" size="small" empty-text="暂无气象冲突记录">
+        <el-table-column prop="record_no" label="记录编号" width="150" />
+        <el-table-column label="绿地" min-width="140">
+          <template #default="{ row }">{{ row.green_space?.name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="record_date" label="养护日期" width="110" />
+        <el-table-column label="登记天气" width="90">
+          <template #default="{ row }">{{ row.weather_label || '未填' }}</template>
+        </el-table-column>
+        <el-table-column prop="work_content" label="作业内容" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="weather_conflict_note" label="档案标注说明" min-width="260"
+                         show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="conflict-text">{{ row.weather_conflict_note }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <div class="dashboard-columns">
@@ -175,7 +209,7 @@ function emptyDashboard() {
     overview: {
       green_space: { total: 0, total_area: 0, by_status: {} },
       task: { total: 0, open_count: 0, overdue_count: 0, due_soon_count: 0, completion_rate: 0, by_status: {} },
-      record: { total: 0, month_count: 0, month_work_hours: 0, total_work_hours: 0 },
+      record: { total: 0, month_count: 0, month_work_hours: 0, total_work_hours: 0, weather_conflict_count: 0 },
       replacement: { total: 0, month_count: 0, month_quantity: 0, month_amount: 0, year_amount: 0, total_amount: 0 },
     },
     distributions: {
@@ -258,5 +292,14 @@ onMounted(load)
 .overdue-days {
   color: #f56c6c;
   font-weight: 600;
+}
+
+.conflict-panel {
+  margin-top: 16px;
+  border-color: var(--el-color-warning-light-5);
+}
+
+.conflict-text {
+  color: var(--el-color-warning);
 }
 </style>

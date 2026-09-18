@@ -31,7 +31,8 @@
 
     <div class="stat-grid">
       <StatCard label="养护记录" :value="formatNumber(statistics.record_count)" unit="条"
-                :hint="`累计工时 ${formatHours(statistics.total_work_hours)}`" icon="Notebook" />
+                :hint="recordCardHint"
+                :tone="statistics.weather_conflict_count ? 'warning' : 'default'" icon="Notebook" />
       <StatCard label="最近养护日期" :value="formatDate(statistics.last_maintenance_date)"
                 :hint="statistics.is_maintenance_overdue ? '已超过 30 天未养护' : '养护节奏正常'"
                 :tone="statistics.is_maintenance_overdue ? 'warning' : 'default'" icon="Calendar" />
@@ -80,15 +81,28 @@
           </div>
           <el-table :data="recentRecords" size="small" empty-text="暂无养护记录">
             <el-table-column prop="record_no" label="记录编号" width="160" />
-            <el-table-column prop="record_date" label="养护日期" width="110" />
-            <el-table-column prop="work_content" label="作业内容" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="worker" label="作业人员" width="110">
+            <el-table-column prop="record_date" label="养护日期" width="150">
+              <template #default="{ row }">
+                {{ row.record_date }}
+                <span class="record-weather">{{ row.weather_label || '' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="work_content" label="作业内容" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="worker" label="作业人员" width="100">
               <template #default="{ row }">{{ row.worker || '-' }}</template>
             </el-table-column>
-            <el-table-column label="工时" width="90">
+            <el-table-column label="工时" width="80">
               <template #default="{ row }">{{ formatHours(row.work_hours) }}</template>
             </el-table-column>
-            <el-table-column label="质量评定" width="100">
+            <el-table-column label="气象核对" width="110">
+              <template #default="{ row }">
+                <EnumTag group="weather_match" :value="row.weather_match" :label="row.weather_match_label" />
+                <el-tooltip v-if="row.weather_conflict" :content="row.weather_conflict_note" placement="top" effect="dark">
+                  <el-icon class="conflict-icon"><WarningFilled /></el-icon>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+            <el-table-column label="质量评定" width="95">
               <template #default="{ row }">
                 <EnumTag group="quality_result" :value="row.quality_result" :label="row.quality_result_label" />
               </template>
@@ -163,6 +177,12 @@ const taskTotal = computed(() =>
   Object.values(statistics.value.task_status || {}).reduce((sum, value) => sum + value, 0),
 )
 
+const recordCardHint = computed(() => {
+  const base = `累计工时 ${formatHours(statistics.value.total_work_hours)}`
+  const conflicts = statistics.value.weather_conflict_count
+  return conflicts ? `${base}，${conflicts} 条气象核对冲突` : base
+})
+
 async function load() {
   loading.value = true
   try {
@@ -208,5 +228,17 @@ onMounted(load)
 
 .summary-tag {
   margin-right: 4px;
+}
+
+.record-weather {
+  margin-left: 6px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.conflict-icon {
+  color: var(--el-color-warning);
+  vertical-align: -2px;
+  margin-left: 4px;
 }
 </style>

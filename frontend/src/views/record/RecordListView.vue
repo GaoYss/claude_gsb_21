@@ -19,9 +19,13 @@
         <el-select v-model="filters.weather" placeholder="天气" clearable @change="search">
           <el-option v-for="item in weatherOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
+        <el-select v-model="filters.weather_match" placeholder="气象核对" clearable @change="search">
+          <el-option v-for="item in weatherMatchOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
         <el-date-picker v-model="dateRange" type="daterange" unlink-panels value-format="YYYY-MM-DD"
                         start-placeholder="养护日期起" end-placeholder="养护日期止" @change="onDateChange" />
         <el-checkbox v-model="filters.unlinked" label="仅看未关联任务" border @change="search" />
+        <el-checkbox v-model="filters.weather_conflict" label="仅看气象冲突" border @change="search" />
         <el-button type="primary" :icon="'Search'" @click="search">查询</el-button>
         <el-button :icon="'RefreshLeft'" @click="reset">重置</el-button>
       </div>
@@ -35,6 +39,13 @@
           合格 <strong>{{ summary?.quality_summary?.qualified ?? 0 }}</strong>、
           待复检 <strong>{{ summary?.quality_summary?.pending ?? 0 }}</strong>、
           不合格 <strong>{{ summary?.quality_summary?.unqualified ?? 0 }}</strong>
+          <el-tooltip content="天气与实际气象不符，或雨后短期内仍登记浇灌的记录，点击筛选" placement="top">
+            <span class="conflict-summary" :class="{ 'has-conflict': summary?.weather_conflict_count,
+                                                       active: filters.weather_conflict }"
+                  @click="toggleConflictFilter">
+              气象冲突 <strong>{{ summary?.weather_conflict_count ?? 0 }}</strong>
+            </span>
+          </el-tooltip>
         </span>
         <el-button :icon="'Refresh'" text @click="load">刷新</el-button>
       </div>
@@ -50,10 +61,15 @@
             <el-tag v-else size="small" type="info" effect="plain">日常养护</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="养护日期" width="105">
+        <el-table-column label="养护日期" width="115">
           <template #default="{ row }">
             <div>{{ row.record_date }}</div>
-            <div class="cell-sub">{{ row.weather_label || '-' }}</div>
+            <div class="cell-sub">
+              {{ row.weather_label || '-' }}
+              <el-tooltip v-if="row.weather_conflict" :content="row.weather_conflict_note" placement="top" effect="dark">
+                <el-icon class="conflict-icon"><WarningFilled /></el-icon>
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="work_content" label="作业内容" min-width="190" show-overflow-tooltip />
@@ -62,6 +78,11 @@
         </el-table-column>
         <el-table-column label="工时" width="80" align="right">
           <template #default="{ row }">{{ formatNumber(row.work_hours) }}</template>
+        </el-table-column>
+        <el-table-column label="气象核对" width="105">
+          <template #default="{ row }">
+            <EnumTag group="weather_match" :value="row.weather_match" :label="row.weather_match_label" />
+          </template>
         </el-table-column>
         <el-table-column label="质量评定" width="95">
           <template #default="{ row }">
@@ -118,6 +139,7 @@ const dateRange = ref([])
 
 const { options: qualityOptions } = useEnumOptions('quality_result')
 const { options: weatherOptions } = useEnumOptions('weather')
+const { options: weatherMatchOptions } = useEnumOptions('weather_match')
 
 const { filters, meta, items, summary, loading, load, search, resetFilters, handlePageChange, handleSizeChange } =
   useListQuery(maintenanceRecordApi.list, {
@@ -127,6 +149,8 @@ const { filters, meta, items, summary, loading, load, search, resetFilters, hand
       task_id: route.query.task_id ? Number(route.query.task_id) : null,
       quality_result: '',
       weather: '',
+      weather_match: '',
+      weather_conflict: false,
       date_from: '',
       date_to: '',
       unlinked: false,
@@ -147,6 +171,11 @@ function onDateChange(value) {
 function reset() {
   dateRange.value = []
   resetFilters()
+}
+
+function toggleConflictFilter() {
+  filters.weather_conflict = !filters.weather_conflict
+  search()
 }
 
 async function remove(row) {
@@ -176,5 +205,26 @@ async function remove(row) {
 .cell-sub {
   color: #909399;
   font-size: 12px;
+}
+
+.conflict-icon {
+  color: var(--el-color-warning);
+  vertical-align: -2px;
+  margin-left: 2px;
+}
+
+.conflict-summary {
+  margin-left: 12px;
+  color: #909399;
+  cursor: pointer;
+  user-select: none;
+}
+
+.conflict-summary.active {
+  color: var(--el-color-primary);
+}
+
+.conflict-summary.has-conflict {
+  color: var(--el-color-warning);
 }
 </style>

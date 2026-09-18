@@ -38,6 +38,55 @@
           </el-form-item>
         </el-col>
       </el-row>
+
+      <!-- 气象核对：天气应与当日实际气象保持一致，浇灌类作业遇降雨时给出提示 -->
+      <el-form-item label="气象核对" v-if="weatherCheck">
+        <div class="weather-check">
+          <template v-if="weatherCheck.actual_weather">
+            <el-alert
+              :type="alertType"
+              :closable="false"
+              show-icon
+              class="check-alert"
+            >
+              <template #title>
+                <div class="check-line">
+                  <span v-if="weatherCheck.weather_match === 'mismatch'">
+                    {{ weatherCheck.district }} {{ weatherCheck.record_date }} 实际气象为
+                    <strong>{{ weatherCheck.actual_weather_label }}</strong>
+                    <span v-if="weatherCheck.diary?.rainfall_mm">（降雨量 {{ weatherCheck.diary.rainfall_mm }}mm）</span>
+                    ，与登记天气不一致
+                  </span>
+                  <span v-else-if="weatherCheck.weather_match === 'consistent'">
+                    登记天气与{{ weatherCheck.district }}当日实际气象
+                    <strong>{{ weatherCheck.actual_weather_label }}</strong>一致
+                  </span>
+                  <span v-else>
+                    {{ weatherCheck.district }} {{ weatherCheck.record_date }} 实际气象为
+                    <strong>{{ weatherCheck.actual_weather_label }}</strong>
+                    <span v-if="weatherCheck.diary?.rainfall_mm">（降雨量 {{ weatherCheck.diary.rainfall_mm }}mm）</span>
+                    ，尚未选择登记天气
+                  </span>
+                  <el-button v-if="weatherCheck.weather_match !== 'consistent'"
+                             link type="primary" class="adopt-btn" @click="adoptActualWeather">
+                    按实际气象填报
+                  </el-button>
+                </div>
+              </template>
+            </el-alert>
+          </template>
+          <el-alert v-else type="info" :closable="false" show-icon class="check-alert">
+            <template #title>
+              {{ weatherCheck.district }} {{ weatherCheck.record_date }} 暂无气象日志，天气按填报内容留存
+            </template>
+          </el-alert>
+          <el-alert v-for="(warning, index) in weatherCheck.warnings" :key="index"
+                    type="warning" :closable="false" show-icon class="check-alert">
+            <template #title>{{ warning }}</template>
+          </el-alert>
+        </div>
+      </el-form-item>
+
       <el-form-item label="作业内容" prop="work_content" :error="fieldErrors.work_content">
         <el-input v-model="form.work_content" type="textarea" :rows="3" maxlength="4000"
                   placeholder="如：修剪香樟下垂枝 32 株，清运枝条 2 车" />
@@ -73,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { maintenanceRecordApi, maintenanceTaskApi } from '@/api'
@@ -95,8 +144,13 @@ const fieldErrors = ref({})
 const spacePreset = ref(null)
 const taskPreset = ref(null)
 const form = reactive(emptyForm())
+const weatherCheck = ref(null)
+let checkTimer = null
 
 const isEdit = computed(() => editingId.value !== null)
+
+const ALERT_TYPES = { consistent: 'success', mismatch: 'warning', pending: 'info', unavailable: 'info' }
+const alertType = computed(() => ALERT_TYPES[weatherCheck.value?.weather_match] || 'info')
 
 const rules = {
   record_date: [{ required: true, message: '请选择养护日期', trigger: 'change' }],
@@ -123,6 +177,7 @@ function emptyForm() {
 function open(row = null) {
   Object.assign(form, emptyForm())
   fieldErrors.value = {}
+  weatherCheck.value = null
   spacePreset.value = null
   taskPreset.value = null
   editingId.value = row?.id ?? null
@@ -134,15 +189,23 @@ function open(row = null) {
     taskPreset.value = row.task ? { ...row.task, id: row.task_id } : null
   }
   visible.value = true
+  scheduleCheck()
 }
 
 function close() {
   visible.value = false
 }
 
+function adoptActualWeather() {
+  if (weatherCheck.value?.suggested_weather) {
+    form.weather = weatherCheck.value.suggested_weather
+  }
+}
+
 function onGreenSpaceChange() {
   form.task_id = null
   taskPreset.value = null
+  scheduleCheck()
 }
 
 async function onTaskChange(taskId) {
@@ -153,6 +216,36 @@ async function onTaskChange(taskId) {
     spacePreset.value = task.green_space
     taskPreset.value = { id: task.id, task_no: task.task_no, title: task.title, status: task.status }
   }
+  scheduleCheck()
+}
+
+// 绿地/任务/日期/天气/作业内容变化时，延迟拉取核对结论，避免输入过程中频繁请求
+watch(
+  () => [form.green_space_id, form.task_id, form.record_date, form.weather, form.work_content],
+  () => {
+    if (visible.value) scheduleCheck()
+  },
+)
+
+function scheduleCheck() {
+  clearTimeout(checkTimer)
+  checkTimer = setTimeout(runWeatherCheck, 300)
+}
+
+async function runWeatherCheck() {
+  if (!form.record_date || (!form.green_space_id && !form.task_id)) {
+    weatherCheck.value = null
+    return
+  }
+  const params = {
+    record_date: form.record_date,
+    weather: form.weather || undefined,
+    work_content: form.work_content || undefined,
+  }
+  if (form.task_id) params.task_id = form.task_id
+  if (form.green_space_id) params.green_space_id = form.green_space_id
+  const data = await maintenanceRecordApi.weatherCheck(params).catch(() => null)
+  if (data && visible.value) weatherCheck.value = data
 }
 
 async function submit() {
@@ -162,10 +255,12 @@ async function submit() {
     fieldErrors.value = { green_space_id: '请选择所属绿地或关联养护任务' }
     return
   }
+  // 保存前再核对一次，若提示未被处理（天气仍不符或坚持雨后浇灌），由后端在档案中标注
+  await runWeatherCheck()
   submitting.value = true
   fieldErrors.value = {}
   const payload = { ...form }
-  delete payload.task_no
+  delete payload.record_no
   if (!payload.record_no) delete payload.record_no
   if (!payload.task_id) payload.task_id = null
   try {
@@ -187,3 +282,36 @@ async function submit() {
 
 defineExpose({ open })
 </script>
+
+<style scoped>
+.form-hint {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+}
+
+.weather-check {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.check-alert {
+  align-items: flex-start;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.adopt-btn {
+  margin-left: 4px;
+  padding: 0;
+  height: auto;
+  font-weight: 600;
+}
+</style>

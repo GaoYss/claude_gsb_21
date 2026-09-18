@@ -2,14 +2,36 @@
 
 from flask import Blueprint, request
 
-from ..schemas import validate_maintenance_record
+from ..schemas import validate_maintenance_record, validate_weather_check
 from ..schemas.filters import record_filters
-from ..services import MaintenanceRecordService
+from ..services import MaintenanceRecordService, WeatherDiaryService
 from ..utils.pagination import paginate, parse_page_args
 from ..utils.requests import json_body
 from ..utils.responses import created, ok
 
 bp = Blueprint("maintenance_records", __name__)
+
+
+@bp.get("/maintenance-records/weather-check")
+def record_weather_check():
+    """表单实时核对：返回当日实际天气、建议天气与浇灌降雨提示。"""
+
+    args = request.args
+    payload = validate_weather_check({
+        "green_space_id": args.get("green_space_id"),
+        "task_id": args.get("task_id"),
+        "record_date": args.get("record_date"),
+        "weather": args.get("weather") or None,
+        "work_content": args.get("work_content") or None,
+    })
+    check = WeatherDiaryService.cross_check(
+        payload.get("green_space_id"),
+        payload["record_date"],
+        weather=payload.get("weather"),
+        task_id=payload.get("task_id"),
+        work_content=payload.get("work_content"),
+    )
+    return ok(check)
 
 
 @bp.get("/maintenance-records")

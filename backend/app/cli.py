@@ -11,7 +11,7 @@ import click
 from flask.cli import with_appcontext
 
 from .extensions import db
-from .models import GreenSpace
+from .models import GreenSpace, WeatherDiary
 from .services import (
     GreenSpaceService,
     MaintenanceRecordService,
@@ -165,6 +165,58 @@ WORKERS = ["王海涛", "李建民", "张凤英", "吴国强", "何丽萍", "赵
 SUPPLIERS = ["萧山苗木合作社", "临安绿源苗圃", "余杭花卉基地", "杭州城西园艺公司"]
 
 
+def _pick_diary_weather(rng, day):
+    """按日期生成稳定的实际天气分布；冬季偶有雪。"""
+
+    roll = rng.random()
+    if day.month in (12, 1, 2) and roll < 0.08:
+        return "snow"
+    if roll < 0.35:
+        return "sunny"
+    if roll < 0.60:
+        return "cloudy"
+    if roll < 0.78:
+        return "overcast"
+    if roll < 0.93:
+        return "rain"
+    return "windy"
+
+
+def _upsert_diary(district, day, weather, rainfall_mm=None):
+    """按行政区+日期写入或更新气象日志（不经 service 提交，随外层事务统一提交）。"""
+
+    diary = (
+        db.session.query(WeatherDiary)
+        .filter(WeatherDiary.district == district, WeatherDiary.diary_date == day)
+        .first()
+    )
+    if diary is None:
+        diary = WeatherDiary(district=district, diary_date=day, source="imported")
+        db.session.add(diary)
+    diary.weather = weather
+    diary.rainfall_mm = rainfall_mm
+    return diary
+
+
+def generate_weather_diaries(rng, districts, today_):
+    """为每个行政区生成近 180 天至未来 10 天的实际气象日志。"""
+
+    count = 0
+    for district in sorted(districts):
+        for offset in range(-180, 11):
+            day = today_ + timedelta(days=offset)
+            weather = _pick_diary_weather(rng, day)
+            rainfall = None
+            if weather in ("rain", "snow"):
+                rainfall = round(rng.uniform(3, 48), 1)
+            elif weather in ("cloudy", "overcast") and rng.random() < 0.08:
+                rainfall = round(rng.uniform(0.1, 2), 1)  # 可测微量降水
+            _upsert_diary(district, day, weather, rainfall)
+            count += 1
+    db.session.flush()
+    return count
+
+
 def register_cli(app):
     app.cli.add_command(init_db_command)
     app.cli.add_command(seed_command)
@@ -207,8 +259,25 @@ def seed_command(reset, seed_value):
     summary = generate_demo_data(random.Random(seed_value))
     click.echo(
         "演示数据写入完成：绿地 {green_space} 处、养护任务 {maintenance_task} 条、"
-        "养护记录 {maintenance_record} 条、绿植更换 {plant_replacement} 条".format(**summary)
+        "养护记录 {maintenance_record} 条、绿植更换 {plant_replacement} 条、"
+        "气象日志 {weather_diary} 条".format(**summary)
     )
+
+
+def _record_weather(rng, district, day):
+    """登记天气以当日实际气象为准；约 8% 刻意填报不符，用于演示冲突标注。"""
+
+    diary = (
+        db.session.query(WeatherDiary)
+        .filter(WeatherDiary.district == district, WeatherDiary.diary_date == day)
+        .first()
+    )
+    if diary is None:
+        return rng.choice(WEATHERS)
+    if rng.random() < 0.08:
+        candidates = [item for item in WEATHERS if item != diary.weather]
+        return rng.choice(candidates)
+    return diary.weather
 
 
 def generate_demo_data(rng):
@@ -220,7 +289,13 @@ def generate_demo_data(rng):
         "maintenance_task": 0,
         "maintenance_record": 0,
         "plant_replacement": 0,
+        "weather_diary": 0,
     }
+
+    # 先准备各行政区实际气象日志，养护记录的天气填报以它为准
+    counts["weather_diary"] = generate_weather_diaries(
+        rng, {item["district"] for item in SPACE_SEEDS}, today_
+    )
 
     for index, space_seed in enumerate(SPACE_SEEDS):
         payload = dict(space_seed)
@@ -262,7 +337,7 @@ def generate_demo_data(rng):
                 "work_content": rng.choice(RECORD_CONTENTS[task_type]),
                 "worker": rng.choice(WORKERS),
                 "work_hours": rng.choice([3, 4, 5, 6, 8, 10]),
-                "weather": rng.choice(WEATHERS),
+                "weather": _record_weather(rng, space.district, record_date),
                 "materials": rng.choice(["复合肥 180kg", "低毒药剂 12L", "支撑杆 60 根", "无", "防寒布 400㎡"]),
                 "quality_result": quality,
                 "issue_found": "局部色块缺株，已列入下月补植计划" if quality == "unqualified" else None,
@@ -293,9 +368,10 @@ def generate_demo_data(rng):
 
         # 日常巡查类记录（不挂任务），保留独立录入场景
         for _ in range(rng.randint(1, 3)):
+            patrol_date = today_ - timedelta(days=rng.randint(1, 40))
             MaintenanceRecordService.create({
                 "green_space_id": space.id,
-                "record_date": today_ - timedelta(days=rng.randint(1, 40)),
+                "record_date": patrol_date,
                 "work_content": rng.choice([
                     "日常巡查，清理零星垃圾与倒伏草本",
                     "巡查发现一处树穴积水，已开沟排水",
@@ -303,7 +379,7 @@ def generate_demo_data(rng):
                 ]),
                 "worker": rng.choice(WORKERS),
                 "work_hours": rng.choice([1, 2, 3]),
-                "weather": rng.choice(WEATHERS),
+                "weather": _record_weather(rng, space.district, patrol_date),
                 "quality_result": "qualified",
             })
             counts["maintenance_record"] += 1

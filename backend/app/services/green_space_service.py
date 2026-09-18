@@ -169,6 +169,12 @@ class GreenSpaceService(BaseService):
             func.count(MaintenanceRecord.id),
             func.coalesce(func.sum(MaintenanceRecord.work_hours), 0),
             func.max(MaintenanceRecord.record_date),
+            func.coalesce(
+                func.sum(
+                    db.case((MaintenanceRecord.weather_conflict_note.isnot(None), 1), else_=0)
+                ),
+                0,
+            ),
         ).filter(MaintenanceRecord.green_space_id == space.id).one()
 
         replacement_stats = db.session.query(
@@ -222,6 +228,7 @@ class GreenSpaceService(BaseService):
                 "record_count": record_stats[0] or 0,
                 "total_work_hours": to_float(record_stats[1]) or 0,
                 "last_maintenance_date": format_date(record_stats[2]),
+                "weather_conflict_count": record_stats[3] or 0,
                 "replacement_count": replacement_stats[0] or 0,
                 "replacement_quantity": to_float(replacement_stats[1]) or 0,
                 "replacement_amount": to_float(replacement_stats[2]) or 0,

@@ -41,6 +41,11 @@
       <el-table :data="detail.records || []" size="small" border empty-text="该任务还没有养护记录">
         <el-table-column prop="record_no" label="记录编号" width="150" />
         <el-table-column prop="record_date" label="养护日期" width="105" />
+        <el-table-column label="气象核对" width="105">
+          <template #default="{ row }">
+            <EnumTag group="weather_match" :value="row.weather_match" :label="row.weather_match_label" />
+          </template>
+        </el-table-column>
         <el-table-column prop="work_content" label="作业内容" min-width="180" show-overflow-tooltip />
         <el-table-column label="工时" width="80">
           <template #default="{ row }">{{ formatNumber(row.work_hours) }}</template>

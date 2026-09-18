@@ -39,6 +39,12 @@ const routes = [
         meta: { title: '养护记录', icon: 'Notebook' },
       },
       {
+        path: 'weather',
+        name: 'weather-list',
+        component: () => import('@/views/weather/WeatherListView.vue'),
+        meta: { title: '气象日志', icon: 'Cloudy' },
+      },
+      {
         path: 'replacements',
         name: 'replacement-list',
         component: () => import('@/views/replacement/ReplacementListView.vue'),

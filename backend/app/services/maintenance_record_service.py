@@ -13,6 +13,7 @@ from ..utils.numbers import to_float
 from ..utils.sorting import parse_sort
 from .base_service import BaseService
 from .code_generator import daily_prefix
+from .weather_diary_service import WeatherDiaryService
 
 
 class MaintenanceRecordService(BaseService):
@@ -81,6 +82,18 @@ class MaintenanceRecordService(BaseService):
         setattr(instance, "_previous_task_id", instance.task_id)
         cls.prepare_instance(instance, payload)
 
+    @classmethod
+    def apply_derived(cls, instance):
+        """字段赋值后按当日实际气象核对登记天气，并自动标注冲突。"""
+
+        WeatherDiaryService.apply_check_to_record(
+            instance,
+            {},
+            task_id=instance.task_id,
+            green_space_id=instance.green_space_id,
+            record_date=instance.record_date,
+        )
+
     # ------------------------------------------------------------ 任务状态联动
     @classmethod
     def sync_task_status(cls, task_id, *, task=None):
@@ -147,6 +160,10 @@ class MaintenanceRecordService(BaseService):
             query = query.filter(MaintenanceRecord.quality_result == filters["quality_result"])
         if filters.get("weather"):
             query = query.filter(MaintenanceRecord.weather == filters["weather"])
+        if filters.get("weather_match"):
+            query = query.filter(MaintenanceRecord.weather_match == filters["weather_match"])
+        if filters.get("weather_conflict"):
+            query = query.filter(MaintenanceRecord.weather_conflict_note.isnot(None))
         if filters.get("unlinked"):
             query = query.filter(MaintenanceRecord.task_id.is_(None))
         if filters.get("date_from"):
@@ -187,6 +204,7 @@ class MaintenanceRecordService(BaseService):
             MaintenanceRecord.record_date,
             MaintenanceRecord.work_hours,
             MaintenanceRecord.quality_result,
+            MaintenanceRecord.weather_conflict_note,
         ).subquery()
 
         total, hours = db.session.query(
@@ -210,10 +228,17 @@ class MaintenanceRecordService(BaseService):
             .scalar()
             or 0
         )
+        conflict_total = (
+            db.session.query(func.count(subquery.c.id))
+            .filter(subquery.c.weather_conflict_note.isnot(None))
+            .scalar()
+            or 0
+        )
         return {
             "record_count": total or 0,
             "total_work_hours": to_float(hours) or 0,
             "quality_summary": quality,
+            "weather_conflict_count": conflict_total,
             "first_record_date": format_date(first_date),
             "last_record_date": format_date(last_date),
             "replacement_count": replacement_total,

@@ -19,6 +19,7 @@ const TAG_TYPES = {
   task_status: { pending: 'info', in_progress: 'primary', completed: 'success', cancelled: 'danger' },
   task_priority: { low: 'info', medium: 'primary', high: 'warning', urgent: 'danger' },
   quality_result: { qualified: 'success', pending: 'warning', unqualified: 'danger' },
+  weather_match: { consistent: 'success', mismatch: 'warning', unavailable: 'info', pending: 'info' },
   maintenance_grade: { level1: 'success', level2: 'primary', level3: 'info' },
   replacement_reason: { dead: 'danger', disease: 'warning', aging: 'info', upgrade: 'primary' },
 }
